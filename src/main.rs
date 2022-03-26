@@ -17,12 +17,15 @@ use embedded_time::rate::*;
 use rp_pico as bsp;
 // use sparkfun_pro_micro_rp2040 as bsp;
 
-// Pull in any important traits
-use bsp::hal::prelude::*;
 // A shorter alias for the Peripheral Access Crate, which provides low-level
 // register access
 use bsp::hal;
 use bsp::hal::pac;
+// use hal::pac as pac;
+// use rp2040_hal as hal;
+// Pull in any important traits
+// use bsp::hal::prelude::*;
+use cortex_m::prelude::*;
 
 // Some traits we need
 use bsp::hal::clocks::Clock;
@@ -42,6 +45,82 @@ use usb_device::{class_prelude::*, prelude::*};
 use usbd_serial::SerialPort;
 // Convert a number to a string
 use numtoa::NumToA;
+
+// ST7789 Constants
+const ST7789_1_30_INCH_HEIGHT: u32 = 240;
+const ST7789_1_30_INCH_WIDTH: u32 = 240;
+const ST7789_1_30_X_SHIFT: u32 = 0;
+const ST7789_1_30_Y_SHIFT: u32 = 80;
+/* Control Registers and constant codes */
+const ST7789_NOP: u32 = 0x00;
+const ST7789_SWRESET: u32 = 0x01;
+const ST7789_RDDID: u32 = 0x04;
+const ST7789_RDDST: u32 = 0x09;
+
+const ST7789_SLPIN: u32 = 0x10;
+const ST7789_SLPOUT: u32 = 0x11;
+const ST7789_PTLON: u32 = 0x12;
+const ST7789_NORON: u32 = 0x13;
+
+const ST7789_INVOFF: u32 = 0x20;
+const ST7789_INVON: u32 = 0x21;
+const ST7789_DISPOFF: u32 = 0x28;
+const ST7789_DISPON: u32 = 0x29;
+const ST7789_CASET: u32 = 0x2A;
+const ST7789_RASET: u32 = 0x2B;
+const ST7789_RAMWR: u32 = 0x2C;
+const ST7789_RAMRD: u32 = 0x2E;
+
+const ST7789_PTLAR: u32 = 0x30;
+const ST7789_COLMOD: u32 = 0x3A;
+const ST7789_MADCTL: u32 = 0x36;
+
+// Memory Data Access Control Register (0x36H)
+// MAP:     D7  D6  D5  D4  D3  D2  D1  D0
+// param:   MY  MX  MV  ML  RGB MH  -   -
+
+// Page Address Order ('0': Top to Bottom, '1': Bottom to Top) */
+const ST7789_MADCTL_MY: u32 = 0x80;
+// Column Address Order ('0': Left to Right, '1': Right to Left) */
+const ST7789_MADCTL_MX: u32 = 0x40;
+// Page/Column Order ('0' = Normal Mode, '1' = Reverse Mode) */
+const ST7789_MADCTL_MV: u32 = 0x20;
+// Line Address Order ('0' = LCD Refresh Top to Bottom, '1' = LCD Refresh Bottom to Top) */
+const ST7789_MADCTL_ML: u32 = 0x10;
+// RGB/BGR Order ('0' = RGB, '1' = BGR) */
+const ST7789_MADCTL_RGB: u32 = 0x00;
+
+const ST7789_RDID1: u32 = 0xDA;
+const ST7789_RDID2: u32 = 0xDB;
+const ST7789_RDID3: u32 = 0xDC;
+const ST7789_RDID4: u32 = 0xDD;
+
+// Advanced options
+const ST7789_COLOR_MODE_16BIT: u32 = 0x55; //  RGB565 (16bit)
+const ST7789_COLOR_MODE_18BIT: u32 = 0x66; //  RGB666 (18bit)
+
+// Color Codes(RGB565)
+const COLOR_WHITE: u32 = 0xFFFF;
+const COLOR_BLACK: u32 = 0x0000;
+const COLOR_BLUE: u32 = 0x001F;
+const COLOR_RED: u32 = 0xF800;
+const COLOR_MAGENTA: u32 = 0xF81F;
+const COLOR_GREEN: u32 = 0x07E0;
+const COLOR_CYAN: u32 = 0x7FFF;
+const COLOR_YELLOW: u32 = 0xFFE0;
+const COLOR_GRAY: u32 = 0x8430;
+const COLOR_BRED: u32 = 0xF81F;
+const COLOR_GRED: u32 = 0xFFE0;
+const COLOR_GBLUE: u32 = 0x07FF;
+const COLOR_BROWN: u32 = 0xBC40;
+const COLOR_BRRED: u32 = 0xFC07;
+const COLOR_DARKBLUE: u32 = 0x01CF;
+const COLOR_LIGHTBLUE: u32 = 0x7D7C;
+const COLOR_GRAYBLUE: u32 = 0x5458;
+const COLOR_LIGHTGREEN: u32 = 0x841F;
+const COLOR_LGRAY: u32 = 0xC618;
+const COLOR_LGRAYBLUE: u32 = 0xA651;
+const COLOR_LBBLUE: u32 = 0x2B12;
 
 #[entry]
 fn main() -> ! {
@@ -87,6 +166,27 @@ fn main() -> ! {
     let sw_y = pins.gpio21.into_pull_up_input();
     let mut sw_y_flag = false;
 
+    // Init SPI Driver
+    // These are implicitly used by the spi driver if they are in the correct mode
+    let _spi_sclk = pins.gpio10.into_mode::<hal::gpio::FunctionSpi>();
+    let _spi_mosi = pins.gpio11.into_mode::<hal::gpio::FunctionSpi>();
+    let _spi_miso = pins.gpio12.into_mode::<hal::gpio::FunctionSpi>();
+    let spi_1 = hal::Spi::<_, _, 16>::new(pac.SPI1);
+
+    // Exchange the uninitialised SPI driver for an initialised one
+    let mut spi_1 = spi_1.init(
+        &mut pac.RESETS,
+        clocks.peripheral_clock.freq(),
+        16_000_000u32.Hz(),
+        &embedded_hal::spi::MODE_0,
+    );
+
+    // Init GPIOs for LCD
+    let mut backlight_pin = pins.gpio13.into_push_pull_output();
+    let mut dc_select_pin = pins.gpio8.into_push_pull_output();
+
+    let mut loop_cnt: u32 = 0;
+
     // Init UART
     // Set the USB bus
     let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
@@ -108,30 +208,61 @@ fn main() -> ! {
         .device_class(2)
         .build();
 
-    // Init SPI Driver
-    // These are implicitly used by the spi driver if they are in the correct mode
-    let _spi_sclk = pins.gpio10.into_mode::<hal::gpio::FunctionSpi>();
-    let _spi_mosi = pins.gpio11.into_mode::<hal::gpio::FunctionSpi>();
-    let _spi_miso = pins.gpio12.into_mode::<hal::gpio::FunctionSpi>();
-    let spi_1 = hal::Spi::<_, _, 8>::new(pac.SPI1);
-
-    // Exchange the uninitialised SPI driver for an initialised one
-    let mut spi_1 = spi_1.init(
-        &mut pac.RESETS,
-        clocks.peripheral_clock.freq(),
-        16_000_000u32.Hz(),
-        &embedded_hal::spi::MODE_0,
-    );
-
-    // Init GPIOs for LCD
-    let mut backlight_pin = pins.gpio13.into_push_pull_output();
-    let mut dc_select_pin = pins.gpio8.into_push_pull_output();
-
     // Main Loop
     loop {
-        backlight_pin.set_high().unwrap();
-        delay.delay_ms(500);
-        backlight_pin.set_low().unwrap();
+        if loop_cnt == 1003 {
+            // Init LCDs
+            // Write out 0, ignore return value
+            let _ = usb_dev.poll(&mut [&mut serial]);
+            let _ = serial.write(b"start spi send\r\n");
+            if spi_1.write(&[0]).is_ok() {
+                // SPI write was succesful
+                let _ = serial.write(b"spi send done\r\n");
+            } else {
+                let _ = serial.write(b"spi send undone\r\n");
+            };
+
+            // write 50, then check the return
+            let _ = usb_dev.poll(&mut [&mut serial]);
+            let send_success = spi_1.send(1024);
+            match send_success {
+                Ok(_) => {
+                    // We succeeded, check the read value
+                    if let Ok(_x) = spi_1.read() {
+                        // We got back `x` in exchange for the 0x50 we sent.
+                        let _ = serial.write(b"matched\r\n");
+                    };
+                }
+                // Err(_) => todo!(),
+                Err(_) => {
+                    let _ = serial.write(b"unmatched\r\n");
+                }
+            }
+
+            // Do a read+write at the same time. Data in `buffer` will be replaced with
+            // the data read from the SPI device.
+            let mut buffer: [u16; 4] = [1024, 2048, 4096, 8192];
+            let transfer_success = spi_1.transfer(&mut buffer);
+            #[allow(clippy::single_match)]
+            match transfer_success {
+                Ok(_) => {}  // Handle success
+                Err(_) => {} // handle errors
+            };
+        }
+
+        if (loop_cnt % 200) % 2 == 0 {
+            backlight_pin.set_high().unwrap();
+            led_pin.set_high().unwrap();
+        } else if (loop_cnt % 200) % 2 == 1 {
+            backlight_pin.set_low().unwrap();
+            led_pin.set_low().unwrap();
+        }
+        let _ = usb_dev.poll(&mut [&mut serial]);
+        delay.delay_ms(5);
+        loop_cnt += 1;
+        if loop_cnt > 1000 {
+            loop_cnt = 1;
+        }
         // if sw_a.is_low().unwrap() {
         //     if sw_a_flag == true {
         //         continue;

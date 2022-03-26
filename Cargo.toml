@@ -3,6 +3,9 @@
 # see https://ushitora.net/archives/2617#toc16
 # see https://www.waveshare.com/pico-lcd-1.3.htm
 # see https://www.waveshare.com/wiki/Pico-LCD-1.3
+# see https://github.com/Floyd-Fish/ST7789-STM32/blob/master/ST7789/st7789.h
+# see https://github.com/Floyd-Fish/ST7789-STM32/blob/master/ST7789/st7789.c
+
 [package]
 authors = ["shts"]
 edition = "2018"
