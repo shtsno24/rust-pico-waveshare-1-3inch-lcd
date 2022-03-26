@@ -6,9 +6,8 @@ use defmt::*;
 use defmt_rtt as _;
 use embedded_hal::digital::v2::{InputPin, OutputPin};
 use embedded_time::fixed_point::FixedPoint;
+use embedded_time::rate::Extensions;
 use panic_halt as _;
-// use panic_probe as _;
-// use rp2040_hal as hal;
 
 // Time handling traits
 use embedded_time::rate::*;
@@ -29,16 +28,13 @@ use bsp::hal::pac;
 use bsp::hal::clocks::Clock;
 use core::fmt::Write;
 
+/// External high-speed crystal on the Raspberry Pi Pico board is 12 MHz. Adjust
+/// if your board has a different frequency
+const XTAL_FREQ_HZ: u32 = 12_000_000u32;
+
 // #[link_section = ".boot2"]
 // #[used]
 // pub static BOOT2: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
-
-// use bsp::hal::{
-//     clocks::{init_clocks_and_plls, Clock},
-//     pac,
-//     sio::Sio,
-//     watchdog::Watchdog,
-// };
 
 // USB Device support
 use usb_device::{class_prelude::*, prelude::*};
@@ -55,10 +51,9 @@ fn main() -> ! {
     let mut watchdog = hal::Watchdog::new(pac.WATCHDOG);
     let sio = hal::Sio::new(pac.SIO);
 
-    // External high-speed crystal on the pico board is 12Mhz
-    let external_xtal_freq_hz = 12_000_000u32;
+    // let external_xtal_freq_hz = 12_000_000u32;
     let clocks = hal::clocks::init_clocks_and_plls(
-        external_xtal_freq_hz,
+        XTAL_FREQ_HZ,
         pac.XOSC,
         pac.CLOCKS,
         pac.PLL_SYS,
@@ -69,14 +64,15 @@ fn main() -> ! {
     .ok()
     .unwrap();
 
-    let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().integer());
-
+    // Set the pins to their default state
     let pins = bsp::Pins::new(
         pac.IO_BANK0,
         pac.PADS_BANK0,
         sio.gpio_bank0,
         &mut pac.RESETS,
     );
+
+    let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().integer());
 
     // Init LED
     let mut led_pin = pins.led.into_push_pull_output();
@@ -112,78 +108,99 @@ fn main() -> ! {
         .device_class(2)
         .build();
 
+    // Init SPI Driver
+    // These are implicitly used by the spi driver if they are in the correct mode
+    let _spi_sclk = pins.gpio10.into_mode::<hal::gpio::FunctionSpi>();
+    let _spi_mosi = pins.gpio11.into_mode::<hal::gpio::FunctionSpi>();
+    let _spi_miso = pins.gpio12.into_mode::<hal::gpio::FunctionSpi>();
+    let spi_1 = hal::Spi::<_, _, 8>::new(pac.SPI1);
+
+    // Exchange the uninitialised SPI driver for an initialised one
+    let mut spi_1 = spi_1.init(
+        &mut pac.RESETS,
+        clocks.peripheral_clock.freq(),
+        16_000_000u32.Hz(),
+        &embedded_hal::spi::MODE_0,
+    );
+
+    // Init GPIOs for LCD
+    let mut backlight_pin = pins.gpio13.into_push_pull_output();
+    let mut dc_select_pin = pins.gpio8.into_push_pull_output();
+
     // Main Loop
     loop {
-        if sw_a.is_low().unwrap() {
-            if sw_a_flag == true {
-                continue;
-            } else {
-                let _ = serial.write(b"push sw_a\r\n");
-                for _ in 0..3 {
-                    info!("on!");
-                    led_pin.set_high().unwrap();
-                    delay.delay_ms(200);
-                    info!("off!");
-                    led_pin.set_low().unwrap();
-                    delay.delay_ms(200);
-                }
-                sw_a_flag = true;
-            }
-        } else if sw_b.is_low().unwrap() {
-            if sw_b_flag == true {
-                continue;
-            } else {
-                let _ = serial.write(b"push sw_b\r\n");
-                for _ in 0..6 {
-                    info!("on!");
-                    led_pin.set_high().unwrap();
-                    delay.delay_ms(100);
-                    info!("off!");
-                    led_pin.set_low().unwrap();
-                    delay.delay_ms(100);
-                }
-                sw_b_flag = true;
-            }
-        } else if sw_x.is_low().unwrap() {
-            if sw_x_flag == true {
-                continue;
-            } else {
-                let _ = serial.write(b"push sw_x\r\n");
-                for _ in 0..12 {
-                    info!("on!");
-                    led_pin.set_high().unwrap();
-                    delay.delay_ms(50);
-                    info!("off!");
-                    led_pin.set_low().unwrap();
-                    delay.delay_ms(50);
-                }
-                sw_x_flag = true;
-            }
-        } else if sw_y.is_low().unwrap() {
-            if sw_y_flag == true {
-                continue;
-            } else {
-                let _ = serial.write(b"push sw_y\r\n");
-                for _ in 0..24 {
-                    info!("on!");
-                    led_pin.set_high().unwrap();
-                    delay.delay_ms(25);
-                    info!("off!");
-                    led_pin.set_low().unwrap();
-                    delay.delay_ms(25);
-                }
-                sw_y_flag = true;
-            }
-        } else {
-            sw_a_flag = false;
-            sw_b_flag = false;
-            sw_x_flag = false;
-            sw_y_flag = false;
-            led_pin.set_high().unwrap();
-
-            let _ = usb_dev.poll(&mut [&mut serial]);
-            delay.delay_ms(5);
-        }
+        backlight_pin.set_high().unwrap();
+        delay.delay_ms(500);
+        backlight_pin.set_low().unwrap();
+        // if sw_a.is_low().unwrap() {
+        //     if sw_a_flag == true {
+        //         continue;
+        //     } else {
+        //         let _ = serial.write(b"push sw_a\r\n");
+        //         for _ in 0..3 {
+        //             info!("on!");
+        //             led_pin.set_high().unwrap();
+        //             delay.delay_ms(200);
+        //             info!("off!");
+        //             led_pin.set_low().unwrap();
+        //             delay.delay_ms(200);
+        //         }
+        //         sw_a_flag = true;
+        //     }
+        // } else if sw_b.is_low().unwrap() {
+        //     if sw_b_flag == true {
+        //         continue;
+        //     } else {
+        //         let _ = serial.write(b"push sw_b\r\n");
+        //         for _ in 0..6 {
+        //             info!("on!");
+        //             led_pin.set_high().unwrap();
+        //             delay.delay_ms(100);
+        //             info!("off!");
+        //             led_pin.set_low().unwrap();
+        //             delay.delay_ms(100);
+        //         }
+        //         sw_b_flag = true;
+        //     }
+        // } else if sw_x.is_low().unwrap() {
+        //     if sw_x_flag == true {
+        //         continue;
+        //     } else {
+        //         let _ = serial.write(b"push sw_x\r\n");
+        //         for _ in 0..12 {
+        //             info!("on!");
+        //             led_pin.set_high().unwrap();
+        //             delay.delay_ms(50);
+        //             info!("off!");
+        //             led_pin.set_low().unwrap();
+        //             delay.delay_ms(50);
+        //         }
+        //         sw_x_flag = true;
+        //     }
+        // } else if sw_y.is_low().unwrap() {
+        //     if sw_y_flag == true {
+        //         continue;
+        //     } else {
+        //         let _ = serial.write(b"push sw_y\r\n");
+        //         for _ in 0..24 {
+        //             info!("on!");
+        //             led_pin.set_high().unwrap();
+        //             delay.delay_ms(25);
+        //             info!("off!");
+        //             led_pin.set_low().unwrap();
+        //             delay.delay_ms(25);
+        //         }
+        //         sw_y_flag = true;
+        //     }
+        // } else {
+        //     sw_a_flag = false;
+        //     sw_b_flag = false;
+        //     sw_x_flag = false;
+        //     sw_y_flag = false;
+        //     led_pin.set_high().unwrap();
+        //     let _ = usb_dev.poll(&mut [&mut serial]);
+        //     delay.delay_ms(5);
+        // }
     }
 }
 
