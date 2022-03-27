@@ -171,6 +171,7 @@ fn main() -> ! {
     let _spi_sclk = pins.gpio10.into_mode::<hal::gpio::FunctionSpi>();
     let _spi_mosi = pins.gpio11.into_mode::<hal::gpio::FunctionSpi>();
     let _spi_miso = pins.gpio12.into_mode::<hal::gpio::FunctionSpi>();
+    let _spi_csn = pins.gpio9.into_mode::<hal::gpio::FunctionSpi>();
     let spi_1 = hal::Spi::<_, _, 16>::new(pac.SPI1);
 
     // Exchange the uninitialised SPI driver for an initialised one
@@ -184,6 +185,9 @@ fn main() -> ! {
     // Init GPIOs for LCD
     let mut backlight_pin = pins.gpio13.into_push_pull_output();
     let mut dc_select_pin = pins.gpio8.into_push_pull_output();
+
+    // Buffer for NumToA
+    let mut uart_buf = [0u8; 128];
 
     let mut loop_cnt: u32 = 0;
 
@@ -207,61 +211,121 @@ fn main() -> ! {
         .serial_number("TEST")
         .device_class(2)
         .build();
-
     // Main Loop
     loop {
-        if loop_cnt == 1003 {
+        if loop_cnt == 0 {
+            backlight_pin.set_high().unwrap();
+            led_pin.set_high().unwrap();
+        } else if loop_cnt == 100 {
+            backlight_pin.set_low().unwrap();
+            led_pin.set_low().unwrap();
+        } else if loop_cnt % 50 == 0 {
             // Init LCDs
-            // Write out 0, ignore return value
-            let _ = usb_dev.poll(&mut [&mut serial]);
-            let _ = serial.write(b"start spi send\r\n");
-            if spi_1.write(&[0]).is_ok() {
-                // SPI write was succesful
-                let _ = serial.write(b"spi send done\r\n");
-            } else {
-                let _ = serial.write(b"spi send undone\r\n");
-            };
+            // Write out (loop_cnt - 1), ignore return value
+            // let _ = usb_dev.poll(&mut [&mut serial]);
+            // let _ = serial.write(b"start spi send : send ");
+            // if spi_1.write(&[(loop_cnt - 1) as u16]).is_ok() {
+            //     // SPI write was succesful
+            //     let s = (loop_cnt - 1).numtoa(10, &mut buf);
+            //     let _ = serial.write(s);
+            //     let _ = serial.write(b"\r\n\n");
+            // } else {
+            //     let _ = serial.write(b"failed\r\n\n");
+            // };
 
-            // write 50, then check the return
+            // write loop_cnt, then check the return
+            // let _ = usb_dev.poll(&mut [&mut serial]);
+            // let _ = serial.write(b"spi send_recv : send ");
+            // let s = loop_cnt.numtoa(10, &mut uart_buf);
+            // let _ = serial.write(s);
+            // let _ = serial.write(b"\r\n");
+            // let _ = serial.write(b"spi send_recv : recv ");
+            // let send_success = spi_1.send(loop_cnt as u16);
+            // match send_success {
+            //     Ok(_) => {
+            //         // We succeeded, check the read value
+            //         if let Ok(_x) = spi_1.read() {
+            //             let s = _x.numtoa(10, &mut uart_buf);
+            //             let _ = serial.write(s);
+            //             let _ = serial.write(b"\r\n\n");
+            //             // We got back `x` in exchange for the 0x50 we sent.
+            //         };
+            //     }
+            //     // Err(_) => todo!(),
+            //     Err(_) => {}
+            // }
+
+            // // Do a read+write at the same time. Data in `buffer` will be replaced with
+            // // the data read from the SPI device.
+            const LEN_SPI_BUFF_0: usize = 3;
+            let mut buffer: [u16; LEN_SPI_BUFF_0] = [11 * (loop_cnt as u16), 2020, 3300];
             let _ = usb_dev.poll(&mut [&mut serial]);
-            let send_success = spi_1.send(1024);
-            match send_success {
-                Ok(_) => {
-                    // We succeeded, check the read value
-                    if let Ok(_x) = spi_1.read() {
-                        // We got back `x` in exchange for the 0x50 we sent.
-                        let _ = serial.write(b"matched\r\n");
-                    };
-                }
-                // Err(_) => todo!(),
-                Err(_) => {
-                    let _ = serial.write(b"unmatched\r\n");
+            let _ = serial.write(b"spi transfer_0 : send [");
+            for _i in 0..LEN_SPI_BUFF_0 {
+                let s = (buffer[_i]).numtoa(10, &mut uart_buf);
+                let _ = serial.write(s);
+                if _i < (LEN_SPI_BUFF_0 - 1) {
+                    let _ = serial.write(b", ");
                 }
             }
-
-            // Do a read+write at the same time. Data in `buffer` will be replaced with
-            // the data read from the SPI device.
-            let mut buffer: [u16; 4] = [1024, 2048, 4096, 8192];
+            let _ = serial.write(b"]\r\n");
+            let _ = serial.write(b"spi transfer_0 : recv ");
             let transfer_success = spi_1.transfer(&mut buffer);
+            let _ = serial.write(b"[");
+            for _d in transfer_success.iter() {
+                for _i in 0..LEN_SPI_BUFF_0 {
+                    let s = (_d[_i]).numtoa(10, &mut uart_buf);
+                    let _ = serial.write(s);
+                    if _i < (LEN_SPI_BUFF_0 - 1) {
+                        let _ = serial.write(b", ");
+                    }
+                }
+            }
+            let _ = serial.write(b"]\r\n");
+
+            #[allow(clippy::single_match)]
+            match transfer_success {
+                Ok(_) => {}  // Handle success
+                Err(_) => {} // handle errors
+            };
+
+            const LEN_SPI_BUFF_1: usize = 4;
+            let mut buffer: [u16; LEN_SPI_BUFF_1] = [32 * (loop_cnt as u16), 2048, 4096, 8192];
+            let _ = usb_dev.poll(&mut [&mut serial]);
+            let _ = serial.write(b"spi transfer_1 : send [");
+            for _i in 0..LEN_SPI_BUFF_1 {
+                let s = (buffer[_i]).numtoa(10, &mut uart_buf);
+                let _ = serial.write(s);
+                if _i < (LEN_SPI_BUFF_1 - 1) {
+                    let _ = serial.write(b", ");
+                }
+            }
+            let _ = serial.write(b"]\r\n");
+            let _ = serial.write(b"spi transfer_1 : recv ");
+            let transfer_success = spi_1.transfer(&mut buffer);
+            let _ = serial.write(b"[");
+            for _d in transfer_success.iter() {
+                for _i in 0..LEN_SPI_BUFF_1 {
+                    let s = (_d[_i]).numtoa(10, &mut uart_buf);
+                    let _ = serial.write(s);
+                    if _i < (LEN_SPI_BUFF_1 - 1) {
+                        let _ = serial.write(b", ");
+                    }
+                }
+            }
+            let _ = serial.write(b"]\r\n\n==========\r\n\n");
+
             #[allow(clippy::single_match)]
             match transfer_success {
                 Ok(_) => {}  // Handle success
                 Err(_) => {} // handle errors
             };
         }
-
-        if (loop_cnt % 200) % 2 == 0 {
-            backlight_pin.set_high().unwrap();
-            led_pin.set_high().unwrap();
-        } else if (loop_cnt % 200) % 2 == 1 {
-            backlight_pin.set_low().unwrap();
-            led_pin.set_low().unwrap();
-        }
         let _ = usb_dev.poll(&mut [&mut serial]);
-        delay.delay_ms(5);
+        delay.delay_ms(10);
         loop_cnt += 1;
-        if loop_cnt > 1000 {
-            loop_cnt = 1;
+        if loop_cnt > 200 {
+            loop_cnt = 0;
         }
         // if sw_a.is_low().unwrap() {
         //     if sw_a_flag == true {
