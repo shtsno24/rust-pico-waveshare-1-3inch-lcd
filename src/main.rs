@@ -397,14 +397,6 @@ fn main() -> ! {
     { //	Inversion ON
          // SPI write was succesful
     }
-    // delay.delay_us(200);
-    // dc_select_pin.set_high().unwrap(); // send data
-    // if spi_1
-    //     .write(&[ST7789_SLPOUT, ST7789_DISPON, ST7789_NORON])
-    //     .is_ok()
-    // { // Out of sleep mode
-    //      // SPI write was succesful
-    // }
     delay.delay_ms(10);
 
     // Fill LCD in Light Blue
@@ -454,15 +446,26 @@ fn main() -> ! {
     }
     delay.delay_us(200);
 
+    // Generate Data
+    let fill_color_0: u16 = COLOR_RED;
+    let fill_data_565_0: [u8; 2] = [(fill_color_0 >> 8) as u8, (fill_color_0 & 0x00FF) as u8];
+    let fill_color_1: u16 = COLOR_BLUE;
+    let fill_data_565_1: [u8; 2] = [(fill_color_1 >> 8) as u8, (fill_color_1 & 0x00FF) as u8];
+    let fill_color_2: u16 = COLOR_GREEN;
+    let fill_data_565_2: [u8; 2] = [(fill_color_2 >> 8) as u8, (fill_color_2 & 0x00FF) as u8];
+
     // Send Data
-    let fill_data_565: [u8; 2] = [
-        (COLOR_LIGHTBLUE >> 8) as u8,
-        (COLOR_LIGHTBLUE & 0x00FF) as u8,
-    ];
     dc_select_pin.set_high().unwrap(); // send data
-    for _ in w_start..w_end {
-        for _ in h_start..h_end {
-            if spi_1.write(&fill_data_565).is_ok() { // Main screen turned on
+    for w in w_start..w_end {
+        for h in h_start..h_end {
+            let fill_data_565 = if h % 3 == 0 && w % 3 == 0 {
+                &fill_data_565_0[..]
+            } else if h % 3 == 1 && w % 3 == 1 {
+                &fill_data_565_1[..]
+            } else {
+                &fill_data_565_2[..]
+            };
+            if spi_1.write(fill_data_565).is_ok() { // Main screen turned on
                  // SPI write was succesful
             }
         }
