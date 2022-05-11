@@ -120,6 +120,24 @@ const COLOR_LGRAY: u16 = 0xC618;
 const COLOR_LGRAYBLUE: u16 = 0xA651;
 const COLOR_LBBLUE: u16 = 0x2B12;
 
+// fn st7789_write(
+//     spi: Spi<Enabled, SPI1, 8>,
+//     dc_sel_pin: Pin,
+//     command: &mut [u8],
+//     data: &mut [u8],
+// ) -> () {
+//     dc_sel_pin.set_low().unwrap(); // send command
+//     if spi.write(command).is_ok() {
+//         // SPI write was succesful
+//     }
+//     delay.delay_us(200);
+//     dc_sel_pin.set_high().unwrap(); // send data
+//     if spi.write(data).is_ok() {
+//         // SPI write was succesful
+//     }
+//     delay.delay_us(200);
+// }
+
 #[entry]
 fn main() -> ! {
     info!("Program start");
@@ -130,24 +148,24 @@ fn main() -> ! {
     // User define variables
     let mut loop_cnt: u32 = 0;
     let lcd_rotate: u8 = 1;
-    let mut ST7789_1_30_W_SHIFT: u16 = 0;
-    let mut ST7789_1_30_H_SHIFT: u16 = 0;
+    let mut st7789_1_30_w_shift: u16 = 0;
+    let mut st7789_1_30_h_shift: u16 = 0;
     match lcd_rotate {
         0 => {
-            ST7789_1_30_W_SHIFT = 0;
-            ST7789_1_30_H_SHIFT = 80;
+            st7789_1_30_w_shift = 0;
+            st7789_1_30_h_shift = 80;
         }
         1 => {
-            ST7789_1_30_W_SHIFT = 80;
-            ST7789_1_30_H_SHIFT = 0;
+            st7789_1_30_w_shift = 80;
+            st7789_1_30_h_shift = 0;
         }
         2 => {
-            ST7789_1_30_W_SHIFT = 0;
-            ST7789_1_30_H_SHIFT = 0;
+            st7789_1_30_w_shift = 0;
+            st7789_1_30_h_shift = 0;
         }
         3 => {
-            ST7789_1_30_W_SHIFT = 0;
-            ST7789_1_30_H_SHIFT = 0;
+            st7789_1_30_w_shift = 0;
+            st7789_1_30_h_shift = 0;
         }
         _ => {}
     }
@@ -401,12 +419,14 @@ fn main() -> ! {
 
     // Fill LCD in Light Blue
     // Set Address
-    let w_start: u16 = ST7789_1_30_W_SHIFT;
-    let h_start: u16 = ST7789_1_30_H_SHIFT;
-    // let w_end: u16 = ST7789_1_30_INCH_WIDTH - 1 + ST7789_1_30_W_SHIFT;
-    // let h_end: u16 = ST7789_1_30_INCH_HEIGHT - 1 + ST7789_1_30_H_SHIFT;
-    let w_end: u16 = ST7789_1_30_INCH_WIDTH + ST7789_1_30_W_SHIFT;
-    let h_end: u16 = ST7789_1_30_INCH_HEIGHT + ST7789_1_30_H_SHIFT;
+    let w_start: u16 = st7789_1_30_w_shift;
+    let h_start: u16 = st7789_1_30_h_shift;
+    // let w_end: u16 = ST7789_1_30_INCH_WIDTH - 1 + st7789_1_30_w_shift;
+    // let h_end: u16 = ST7789_1_30_INCH_HEIGHT - 1 + st7789_1_30_h_shift;
+    let w_end: u16 = ST7789_1_30_INCH_WIDTH + st7789_1_30_w_shift;
+    let h_end: u16 = ST7789_1_30_INCH_HEIGHT + st7789_1_30_h_shift;
+    let w_mid: u16 = (w_end + w_start) / 2;
+    let h_mid: u16 = (h_end + h_start) / 2;
 
     let fill_data_addr_w: [u8; 4] = [
         (w_start >> 8) as u8,
@@ -458,9 +478,9 @@ fn main() -> ! {
     dc_select_pin.set_high().unwrap(); // send data
     for w in w_start..w_end {
         for h in h_start..h_end {
-            let fill_data_565 = if h % 3 == 0 && w % 3 == 0 {
+            let fill_data_565 = if h <= h_mid && w <= w_mid {
                 &fill_data_565_0[..]
-            } else if h % 3 == 1 && w % 3 == 1 {
+            } else if h > h_mid && w > w_mid {
                 &fill_data_565_1[..]
             } else {
                 &fill_data_565_2[..]
