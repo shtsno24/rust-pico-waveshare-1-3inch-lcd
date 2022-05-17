@@ -49,76 +49,91 @@ use numtoa::NumToA;
 // ST7789 Constants
 const ST7789_1_30_INCH_HEIGHT: u16 = 240;
 const ST7789_1_30_INCH_WIDTH: u16 = 240;
-/* Control Registers and constant codes */
-const ST7789_NOP: u8 = 0x00;
-const ST7789_SWRESET: u8 = 0x01;
-const ST7789_RDDID: u8 = 0x04;
-const ST7789_RDDST: u8 = 0x09;
+/* Commands for Control Registers*/
+pub enum St7789Command {
+    Nop = 0x00,
+    SwReset = 0x01,
+    RddID = 0x04,
+    RddST = 0x09,
+    SLPin = 0x10,
+    SLPout = 0x11,
+    PTLOn = 0x12,
+    NOROn = 0x13,
+    InvOff = 0x20,
+    InvOn = 0x21,
+    DispOff = 0x28,
+    DispOn = 0x29,
+    CASet = 0x2A,
+    RASet = 0x2B,
+    RamWr = 0x2C,
+    RamRd = 0x2E,
+    PTLAr = 0x30,
+    COLMod = 0x3A,
+    MADCtl = 0x36,
+    RdID1 = 0xDA,
+    RdID2 = 0xDB,
+    RdID3 = 0xDC,
+    RdID4 = 0xDD,
+    // Advanced options
+    ColorMode16bit = 0x55, //  RGB565 (16bit)
+    ColorMode18bit = 0x66, //  RGB666 (18bit)
+}
+impl Into<u8> for St7789Command {
+    fn into(self) -> u8 {
+        self as u8
+    }
+}
 
-const ST7789_SLPIN: u8 = 0x10;
-const ST7789_SLPOUT: u8 = 0x11;
-const ST7789_PTLON: u8 = 0x12;
-const ST7789_NORON: u8 = 0x13;
+/* Commands for Memory Data Access Control Register */
+pub enum ST7789MADCtlCommand {
+    // Memory Data Access Control Register (0x36H)
+    // MAP:     D7  D6  D5  D4  D3  D2  D1  D0
+    // param:   MY  MX  MV  ML  RGB MH  -   -
 
-const ST7789_INVOFF: u8 = 0x20;
-const ST7789_INVON: u8 = 0x21;
-const ST7789_DISPOFF: u8 = 0x28;
-const ST7789_DISPON: u8 = 0x29;
-const ST7789_CASET: u8 = 0x2A;
-const ST7789_RASET: u8 = 0x2B;
-const ST7789_RAMWR: u8 = 0x2C;
-const ST7789_RAMRD: u8 = 0x2E;
-
-const ST7789_PTLAR: u8 = 0x30;
-const ST7789_COLMOD: u8 = 0x3A;
-const ST7789_MADCTL: u8 = 0x36;
-
-// Memory Data Access Control Register (0x36H)
-// MAP:     D7  D6  D5  D4  D3  D2  D1  D0
-// param:   MY  MX  MV  ML  RGB MH  -   -
-
-// Page Address Order ('0': Top to Bottom, '1': Bottom to Top) */
-const ST7789_MADCTL_MY: u8 = 0x80;
-// Column Address Order ('0': Left to Right, '1': Right to Left) */
-const ST7789_MADCTL_MX: u8 = 0x40;
-// Page/Column Order ('0' = Normal Mode, '1' = Reverse Mode) */
-const ST7789_MADCTL_MV: u8 = 0x20;
-// Line Address Order ('0' = LCD Refresh Top to Bottom, '1' = LCD Refresh Bottom to Top) */
-const ST7789_MADCTL_ML: u8 = 0x10;
-// RGB/BGR Order ('0' = RGB, '1' = BGR) */
-const ST7789_MADCTL_RGB: u8 = 0x00;
-
-const ST7789_RDID1: u8 = 0xDA;
-const ST7789_RDID2: u8 = 0xDB;
-const ST7789_RDID3: u8 = 0xDC;
-const ST7789_RDID4: u8 = 0xDD;
-
-// Advanced options
-const ST7789_COLOR_MODE_16BIT: u8 = 0x55; //  RGB565 (16bit)
-const ST7789_COLOR_MODE_18BIT: u8 = 0x66; //  RGB666 (18bit)
+    // Page Address Order ('0': Top to Bottom, '1': Bottom to Top) */
+    MADCtlMY = 0x80,
+    // Column Address Order ('0': Left to Right, '1': Right to Left) */
+    MADCtlMX = 0x40,
+    // Page/Column Order ('0' = Normal Mode, '1' = Reverse Mode) */
+    MADCtlMV = 0x20,
+    // Line Address Order ('0' = LCD Refresh Top to Bottom, '1' = LCD Refresh Bottom to Top) */
+    MADCtlML = 0x10,
+    // RGB/BGR Order ('0' = RGB, '1' = BGR) */
+    MADCtlRGB = 0x00,
+}
+impl Into<u8> for ST7789MADCtlCommand {
+    fn into(self) -> u8 {
+        self as u8
+    }
+}
 
 // Color Codes(RGB565)
-const COLOR_WHITE: u16 = 0xFFFF;
-const COLOR_BLACK: u16 = 0x0000;
-const COLOR_BLUE: u16 = 0x001F;
-const COLOR_RED: u16 = 0xF800;
-const COLOR_MAGENTA: u16 = 0xF81F;
-const COLOR_GREEN: u16 = 0x07E0;
-const COLOR_CYAN: u16 = 0x7FFF;
-const COLOR_YELLOW: u16 = 0xFFE0;
-const COLOR_GRAY: u16 = 0x8430;
-const COLOR_BRED: u16 = 0xF81F;
-const COLOR_GRED: u16 = 0xFFE0;
-const COLOR_GBLUE: u16 = 0x07FF;
-const COLOR_BROWN: u16 = 0xBC40;
-const COLOR_BRRED: u16 = 0xFC07;
-const COLOR_DARKBLUE: u16 = 0x01CF;
-const COLOR_LIGHTBLUE: u16 = 0x7D7C;
-const COLOR_GRAYBLUE: u16 = 0x5458;
-const COLOR_LIGHTGREEN: u16 = 0x841F;
-const COLOR_LGRAY: u16 = 0xC618;
-const COLOR_LGRAYBLUE: u16 = 0xA651;
-const COLOR_LBBLUE: u16 = 0x2B12;
+pub enum DisplayColors {
+    ColorWhite = 0xFFFF,
+    ColorBlack = 0x0000,
+    ColorBlue = 0x001F,
+    ColorRed = 0xF800,
+    ColorMagenta = 0xF81F,
+    ColorGreen = 0x07E0,
+    ColorCyan = 0x7FFF,
+    ColorYellow = 0xFFE0,
+    ColorGray = 0x8430,
+    ColorGBlue = 0x07FF,
+    ColorBrown = 0xBC40,
+    ColorBread = 0xFC07,
+    ColorDarkBlue = 0x01CF,
+    ColorLightBlue = 0x7D7C,
+    ColorGrayBlue = 0x5458,
+    ColorLightGreen = 0x841F,
+    ColorLGray = 0xC618,
+    ColorLGrayBlue = 0xA651,
+    ColorLbBlue = 0x2B12,
+}
+impl Into<u16> for DisplayColors {
+    fn into(self) -> u16 {
+        self as u16
+    }
+}
 
 // fn st7789_write(
 //     spi: Spi<Enabled, SPI1, 8>,
@@ -241,33 +256,45 @@ fn main() -> ! {
     delay.delay_ms(100);
 
     // set lotation
-    let mut lcd_roatate_buffer: u8 = 0x00;
+    let mut lcd_rotate_buffer: u8 = 0x00;
     match lcd_rotate {
-        0 => lcd_roatate_buffer = ST7789_MADCTL_MX | ST7789_MADCTL_MY | ST7789_MADCTL_RGB,
-        1 => lcd_roatate_buffer = ST7789_MADCTL_MY | ST7789_MADCTL_MV | ST7789_MADCTL_RGB,
-        2 => lcd_roatate_buffer = ST7789_MADCTL_RGB,
-        3 => lcd_roatate_buffer = ST7789_MADCTL_MX | ST7789_MADCTL_MV | ST7789_MADCTL_RGB,
+        0 => {
+            lcd_rotate_buffer = ST7789MADCtlCommand::MADCtlMX as u8
+                | ST7789MADCtlCommand::MADCtlMY as u8
+                | ST7789MADCtlCommand::MADCtlRGB as u8
+        }
+        1 => {
+            lcd_rotate_buffer = ST7789MADCtlCommand::MADCtlMY as u8
+                | ST7789MADCtlCommand::MADCtlMV as u8
+                | ST7789MADCtlCommand::MADCtlRGB as u8
+        }
+        2 => lcd_rotate_buffer = ST7789MADCtlCommand::MADCtlRGB as u8,
+        3 => {
+            lcd_rotate_buffer = ST7789MADCtlCommand::MADCtlMX as u8
+                | ST7789MADCtlCommand::MADCtlMV as u8
+                | ST7789MADCtlCommand::MADCtlRGB as u8
+        }
         _ => {}
     }
     dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[ST7789_MADCTL]).is_ok() {
+    if spi_1.write(&[St7789Command::MADCtl as u8]).is_ok() {
         // SPI write was succesful
     }
     delay.delay_us(200);
     dc_select_pin.set_high().unwrap(); // send data
-    if spi_1.write(&[lcd_roatate_buffer]).is_ok() {
+    if spi_1.write(&[lcd_rotate_buffer]).is_ok() {
         // SPI write was succesful
     }
     delay.delay_us(200);
 
     // config color mode
     dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[ST7789_COLMOD]).is_ok() {
+    if spi_1.write(&[St7789Command::COLMod as u8]).is_ok() {
         // SPI write was succesful
     }
     delay.delay_us(200);
     dc_select_pin.set_high().unwrap(); // send data
-    if spi_1.write(&[ST7789_COLOR_MODE_16BIT]).is_ok() {
+    if spi_1.write(&[St7789Command::ColorMode16bit as u8]).is_ok() {
         // SPI write was succesful
     }
     delay.delay_us(200);
@@ -410,7 +437,12 @@ fn main() -> ! {
     //Display Inversion On
     dc_select_pin.set_low().unwrap(); // send command
     if spi_1
-        .write(&[ST7789_INVON, ST7789_SLPOUT, ST7789_DISPON, ST7789_NORON])
+        .write(&[
+            St7789Command::InvOn as u8,
+            St7789Command::SLPout as u8,
+            St7789Command::DispOn as u8,
+            St7789Command::NOROn as u8,
+        ])
         .is_ok()
     { //	Inversion ON
          // SPI write was succesful
@@ -441,7 +473,7 @@ fn main() -> ! {
         (h_end & 0x00FF) as u8,
     ];
     dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[ST7789_CASET]).is_ok() { // set colum(w, x) address
+    if spi_1.write(&[St7789Command::CASet as u8]).is_ok() { // set colum(w, x) address
          // SPI write was succesful
     }
     delay.delay_us(200);
@@ -451,7 +483,7 @@ fn main() -> ! {
     }
     delay.delay_us(200);
     dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[ST7789_RASET]).is_ok() { // set row(h, y) address
+    if spi_1.write(&[St7789Command::RASet as u8]).is_ok() { // set row(h, y) address
          // SPI write was succesful
     }
     delay.delay_us(200);
@@ -461,17 +493,17 @@ fn main() -> ! {
     }
     delay.delay_us(200);
     dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[ST7789_RAMWR]).is_ok() { // Main screen turned on
+    if spi_1.write(&[St7789Command::RamWr as u8]).is_ok() { // Main screen turned on
          // SPI write was succesful
     }
     delay.delay_us(200);
 
     // Generate Data
-    let fill_color_0: u16 = COLOR_RED;
+    let fill_color_0: u16 = DisplayColors::ColorRed as u16;
     let fill_data_565_0: [u8; 2] = [(fill_color_0 >> 8) as u8, (fill_color_0 & 0x00FF) as u8];
-    let fill_color_1: u16 = COLOR_BLUE;
+    let fill_color_1: u16 = DisplayColors::ColorBlue as u16;
     let fill_data_565_1: [u8; 2] = [(fill_color_1 >> 8) as u8, (fill_color_1 & 0x00FF) as u8];
-    let fill_color_2: u16 = COLOR_GREEN;
+    let fill_color_2: u16 = DisplayColors::ColorGreen as u16;
     let fill_data_565_2: [u8; 2] = [(fill_color_2 >> 8) as u8, (fill_color_2 & 0x00FF) as u8];
 
     // Send Data
