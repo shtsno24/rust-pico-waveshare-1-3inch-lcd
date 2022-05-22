@@ -185,7 +185,7 @@ fn st7789_write_frame(
     }
 }
 
-fn fill_frame_quad_power(
+fn st7789_fill_frame_quad_power(
     color_565_0: [u8; 2],
     color_565_1: [u8; 2],
     color_565_2: [u8; 2],
@@ -222,7 +222,6 @@ fn main() -> ! {
     let mut uart_buf = [0u8; 128];
 
     // User define variables
-    let mut loop_cnt: u32 = 0;
     let lcd_rotate: u8 = 0;
     let mut st7789_1_30_w_shift: u16 = 0;
     let mut st7789_1_30_h_shift: u16 = 0;
@@ -495,7 +494,7 @@ fn main() -> ! {
     let fill_data_565_g: [u8; 2] = [(fill_color_g >> 8) as u8, (fill_color_g & 0x00FF) as u8];
 
     // Send Frame Data
-    let frame_buffer = fill_frame_quad_power(
+    let frame_buffer = st7789_fill_frame_quad_power(
         fill_data_565_g,
         fill_data_565_r,
         fill_data_565_b,
@@ -526,88 +525,72 @@ fn main() -> ! {
         .build();
     // Main Loop
     loop {
-        if loop_cnt == 0 {
-            let frame_buffer = fill_frame_quad_power(
-                fill_data_565_r,
-                fill_data_565_b,
-                fill_data_565_g,
-                fill_data_565_g,
-            );
-            st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
+        if sw_a.is_low().unwrap() {
+            if sw_a_flag == true {
+                continue;
+            } else {
+                let _ = serial.write(b"push sw_a\r\n");
+                let frame_buffer = st7789_fill_frame_quad_power(
+                    fill_data_565_r,
+                    fill_data_565_b,
+                    fill_data_565_g,
+                    fill_data_565_g,
+                );
+                st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
+                sw_a_flag = true;
+            }
+        } else if sw_b.is_low().unwrap() {
+            if sw_b_flag == true {
+                continue;
+            } else {
+                let _ = serial.write(b"push sw_b\r\n");
+                let frame_buffer = st7789_fill_frame_quad_power(
+                    fill_data_565_g,
+                    fill_data_565_r,
+                    fill_data_565_b,
+                    fill_data_565_g,
+                );
+                st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
+                sw_b_flag = true;
+            }
+        } else if sw_x.is_low().unwrap() {
+            if sw_x_flag == true {
+                continue;
+            } else {
+                let _ = serial.write(b"push sw_x\r\n");
+                let frame_buffer = st7789_fill_frame_quad_power(
+                    fill_data_565_g,
+                    fill_data_565_g,
+                    fill_data_565_r,
+                    fill_data_565_b,
+                );
+                st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
+                sw_x_flag = true;
+            }
+        } else if sw_y.is_low().unwrap() {
+            if sw_y_flag == true {
+                continue;
+            } else {
+                let _ = serial.write(b"push sw_y\r\n");
+                let frame_buffer = st7789_fill_frame_quad_power(
+                    fill_data_565_b,
+                    fill_data_565_g,
+                    fill_data_565_g,
+                    fill_data_565_r,
+                );
+                st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
+                sw_y_flag = true;
+            }
+        } else {
+            sw_a_flag = false;
+            sw_b_flag = false;
+            sw_x_flag = false;
+            sw_y_flag = false;
             led_pin.set_high().unwrap();
-        } else if loop_cnt == 100 {
-            let frame_buffer = fill_frame_quad_power(
-                fill_data_565_g,
-                fill_data_565_r,
-                fill_data_565_b,
-                fill_data_565_g,
-            );
-            st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
-            led_pin.set_low().unwrap();
-        } else if loop_cnt == 150 {
-            let frame_buffer = fill_frame_quad_power(
-                fill_data_565_g,
-                fill_data_565_g,
-                fill_data_565_r,
-                fill_data_565_b,
-            );
-            st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
-            led_pin.set_high().unwrap();
-        } else if loop_cnt == 200 {
-            let frame_buffer = fill_frame_quad_power(
-                fill_data_565_b,
-                fill_data_565_g,
-                fill_data_565_g,
-                fill_data_565_r,
-            );
-            st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
-            led_pin.set_low().unwrap();
-        } else if loop_cnt % 50 == 0 {
-            delay.delay_ms(1);
-            // write loop_cnt, then check the return
-            // let _ = usb_dev.poll(&mut [&mut serial]);
-            // let _ = serial.write(b"spi send_recv : send ");
-            // let s = loop_cnt.numtoa(10, &mut uart_buf);
-            // let _ = serial.write(s);
-            // let _ = serial.write(b"\r\n");
-            // let _ = serial.write(b"spi send_recv : recv ");
-            // let send_success = spi_1.send(loop_cnt as u16);
-            // match send_success {
-            //     Ok(_) => {
-            //         // We succeeded, check the read value
-            //         if let Ok(_x) = spi_1.read() {
-            //             let s = _x.numtoa(10, &mut uart_buf);
-            //             let _ = serial.write(s);
-            //             let _ = serial.write(b"\r\n\n");
-            //             // We got back `x` in exchange for the 0x50 we sent.
-            //         };
-            //     }
-            //     // Err(_) => todo!(),
-            //     Err(_) => {}
-            // }
+
+            let _ = usb_dev.poll(&mut [&mut serial]);
+            delay.delay_ms(5);
         }
-        let _ = usb_dev.poll(&mut [&mut serial]);
-        delay.delay_ms(10);
-        loop_cnt += 1;
-        if loop_cnt > 250 {
-            loop_cnt = 0;
-        }
-        // if sw_a.is_low().unwrap() {
-        //     if sw_a_flag == true {
-        //         continue;
-        //     } else {
-        //         let _ = serial.write(b"push sw_a\r\n");
-        //         for _ in 0..3 {
-        //             info!("on!");
-        //             led_pin.set_high().unwrap();
-        //             delay.delay_ms(200);
-        //             info!("off!");
-        //             led_pin.set_low().unwrap();
-        //             delay.delay_ms(200);
-        //         }
-        //         sw_a_flag = true;
-        //     }
-        // }
     }
 }
 
