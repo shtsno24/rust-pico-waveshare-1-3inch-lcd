@@ -1,3 +1,4 @@
+// see https://github.com/Floyd-Fish/ST7789-STM32
 #![no_std]
 #![no_main]
 
@@ -19,8 +20,8 @@ use rp_pico as bsp;
 
 // A shorter alias for the Peripheral Access Crate, which provides low-level
 // register access
-use bsp::hal;
 use bsp::hal::pac;
+use bsp::{hal, XOSC_CRYSTAL_FREQ};
 // use hal::pac as pac;
 // use rp2040_hal as hal;
 // Pull in any important traits
@@ -33,7 +34,8 @@ use core::fmt::Write;
 
 /// External high-speed crystal on the Raspberry Pi Pico board is 12 MHz. Adjust
 /// if your board has a different frequency
-const XTAL_FREQ_HZ: u32 = 12_000_000u32;
+// const XTAL_FREQ_HZ: u32 = 12_000_000u32;
+const XTAL_FREQ_HZ: u32 = XOSC_CRYSTAL_FREQ;
 
 // #[link_section = ".boot2"]
 // #[used]
@@ -135,23 +137,82 @@ impl Into<u16> for DisplayColors {
     }
 }
 
-// fn st7789_write(
-//     spi: Spi<Enabled, SPI1, 8>,
-//     dc_sel_pin: Pin,
-//     command: &mut [u8],
-//     data: &mut [u8],
-// ) -> () {
-//     dc_sel_pin.set_low().unwrap(); // send command
-//     if spi.write(command).is_ok() {
-//         // SPI write was succesful
-//     }
-//     delay.delay_us(200);
-//     dc_sel_pin.set_high().unwrap(); // send data
-//     if spi.write(data).is_ok() {
-//         // SPI write was succesful
-//     }
-//     delay.delay_us(200);
-// }
+fn st7789_write_com_data(
+    spi: &mut hal::Spi<hal::spi::Enabled, hal::pac::SPI1, 8>,
+    delay: &mut cortex_m::delay::Delay,
+    dc_sel_pin: &mut dyn embedded_hal::digital::v2::OutputPin<Error = core::convert::Infallible>,
+    command: &[u8],
+    data: &[u8],
+) -> () {
+    // see https://github.com/rp-rs/rp-hal/blob/main/boards/rp-pico/examples/pico_spi_sd_card.rs
+    dc_sel_pin.set_low().unwrap(); // send command
+    if spi.write(command).is_ok() {
+        // SPI write was succesful
+    }
+    delay.delay_us(200);
+    dc_sel_pin.set_high().unwrap(); // send data
+    if spi.write(data).is_ok() {
+        // SPI write was succesful
+    }
+    delay.delay_us(200);
+}
+
+fn st7789_write_command(
+    spi: &mut hal::Spi<hal::spi::Enabled, hal::pac::SPI1, 8>,
+    delay: &mut cortex_m::delay::Delay,
+    dc_sel_pin: &mut dyn embedded_hal::digital::v2::OutputPin<Error = core::convert::Infallible>,
+    command: &[u8],
+) -> () {
+    // see https://github.com/rp-rs/rp-hal/blob/main/boards/rp-pico/examples/pico_spi_sd_card.rs
+    dc_sel_pin.set_low().unwrap(); // send command
+    if spi.write(command).is_ok() {
+        // SPI write was succesful
+    }
+    delay.delay_us(200);
+}
+
+fn st7789_write_frame(
+    spi: &mut hal::Spi<hal::spi::Enabled, hal::pac::SPI1, 8>,
+    dc_sel_pin: &mut dyn embedded_hal::digital::v2::OutputPin<Error = core::convert::Infallible>,
+    fbuffer: &[[u8; 2]],
+) -> () {
+    // see https://github.com/rp-rs/rp-hal/blob/main/boards/rp-pico/examples/pico_spi_sd_card.rs
+    dc_sel_pin.set_high().unwrap(); // send data
+    for hw in 0..fbuffer.len() {
+        if spi.write(&fbuffer[hw]).is_ok() {
+            // SPI write was succesful
+        }
+    }
+}
+
+fn fill_frame_quad_power(
+    color_565_0: [u8; 2],
+    color_565_1: [u8; 2],
+    color_565_2: [u8; 2],
+    color_565_3: [u8; 2],
+) -> [[u8; 2]; (ST7789_1_30_INCH_HEIGHT * ST7789_1_30_INCH_WIDTH) as usize] {
+    let mut cnt_frame: usize = 0;
+    let mut fbuffer: [[u8; 2]; (ST7789_1_30_INCH_WIDTH * ST7789_1_30_INCH_HEIGHT) as usize] =
+        [[0, 0]; (ST7789_1_30_INCH_WIDTH * ST7789_1_30_INCH_HEIGHT) as usize];
+    for w in (0..ST7789_1_30_INCH_WIDTH).rev() {
+        for h in 0..ST7789_1_30_INCH_HEIGHT {
+            let fill_data_565 =
+                if h <= (ST7789_1_30_INCH_HEIGHT / 2) && w <= (ST7789_1_30_INCH_WIDTH / 2) {
+                    &color_565_0[..]
+                } else if h <= (ST7789_1_30_INCH_HEIGHT / 2) && w > (ST7789_1_30_INCH_WIDTH / 2) {
+                    &color_565_1[..]
+                } else if h > (ST7789_1_30_INCH_HEIGHT / 2) && w <= (ST7789_1_30_INCH_WIDTH / 2) {
+                    &color_565_2[..]
+                } else {
+                    &color_565_3[..]
+                };
+            fbuffer[cnt_frame][0] = fill_data_565[0];
+            fbuffer[cnt_frame][1] = fill_data_565[1];
+            cnt_frame += 1;
+        }
+    }
+    fbuffer
+}
 
 #[entry]
 fn main() -> ! {
@@ -162,7 +223,7 @@ fn main() -> ! {
 
     // User define variables
     let mut loop_cnt: u32 = 0;
-    let lcd_rotate: u8 = 1;
+    let lcd_rotate: u8 = 0;
     let mut st7789_1_30_w_shift: u16 = 0;
     let mut st7789_1_30_h_shift: u16 = 0;
     match lcd_rotate {
@@ -184,6 +245,50 @@ fn main() -> ! {
         }
         _ => {}
     }
+    // set lotation
+    let mut lcd_rotate_buffer: u8 = 0x00;
+    match lcd_rotate {
+        0 => {
+            lcd_rotate_buffer = ST7789MADCtlCommand::MADCtlMX as u8
+                | ST7789MADCtlCommand::MADCtlMY as u8
+                | ST7789MADCtlCommand::MADCtlRGB as u8
+        }
+        1 => {
+            lcd_rotate_buffer = ST7789MADCtlCommand::MADCtlMY as u8
+                | ST7789MADCtlCommand::MADCtlMV as u8
+                | ST7789MADCtlCommand::MADCtlRGB as u8
+        }
+        2 => lcd_rotate_buffer = ST7789MADCtlCommand::MADCtlRGB as u8,
+        3 => {
+            lcd_rotate_buffer = ST7789MADCtlCommand::MADCtlMX as u8
+                | ST7789MADCtlCommand::MADCtlMV as u8
+                | ST7789MADCtlCommand::MADCtlRGB as u8
+        }
+        _ => {}
+    }
+
+    // Set Address
+    let w_start: u16 = st7789_1_30_w_shift;
+    let h_start: u16 = st7789_1_30_h_shift;
+    // let w_end: u16 = ST7789_1_30_INCH_WIDTH - 1 + st7789_1_30_w_shift;
+    // let h_end: u16 = ST7789_1_30_INCH_HEIGHT - 1 + st7789_1_30_h_shift;
+    let w_end: u16 = ST7789_1_30_INCH_WIDTH + st7789_1_30_w_shift;
+    let h_end: u16 = ST7789_1_30_INCH_HEIGHT + st7789_1_30_h_shift;
+    let w_mid: u16 = (w_end + w_start) / 2;
+    let h_mid: u16 = (h_end + h_start) / 2;
+
+    let fill_data_addr_w: [u8; 4] = [
+        (w_start >> 8) as u8,
+        (w_start & 0x00FF) as u8,
+        (w_end >> 8) as u8,
+        (w_end & 0x00FF) as u8,
+    ];
+    let fill_data_addr_h: [u8; 4] = [
+        (h_start >> 8) as u8,
+        (h_start & 0x00FF) as u8,
+        (h_end >> 8) as u8,
+        (h_end & 0x00FF) as u8,
+    ];
 
     let mut pac = pac::Peripherals::take().unwrap();
     let core = pac::CorePeripherals::take().unwrap();
@@ -203,6 +308,8 @@ fn main() -> ! {
     .ok()
     .unwrap();
 
+    let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().integer());
+
     // Set the pins to their default state
     let pins = bsp::Pins::new(
         pac.IO_BANK0,
@@ -210,8 +317,6 @@ fn main() -> ! {
         sio.gpio_bank0,
         &mut pac.RESETS,
     );
-
-    let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().integer());
 
     // Init LED
     let mut led_pin = pins.led.into_push_pull_output();
@@ -255,274 +360,149 @@ fn main() -> ! {
     reset_pin.set_high().unwrap();
     delay.delay_ms(100);
 
-    // set lotation
-    let mut lcd_rotate_buffer: u8 = 0x00;
-    match lcd_rotate {
-        0 => {
-            lcd_rotate_buffer = ST7789MADCtlCommand::MADCtlMX as u8
-                | ST7789MADCtlCommand::MADCtlMY as u8
-                | ST7789MADCtlCommand::MADCtlRGB as u8
-        }
-        1 => {
-            lcd_rotate_buffer = ST7789MADCtlCommand::MADCtlMY as u8
-                | ST7789MADCtlCommand::MADCtlMV as u8
-                | ST7789MADCtlCommand::MADCtlRGB as u8
-        }
-        2 => lcd_rotate_buffer = ST7789MADCtlCommand::MADCtlRGB as u8,
-        3 => {
-            lcd_rotate_buffer = ST7789MADCtlCommand::MADCtlMX as u8
-                | ST7789MADCtlCommand::MADCtlMV as u8
-                | ST7789MADCtlCommand::MADCtlRGB as u8
-        }
-        _ => {}
-    }
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[St7789Command::MADCtl as u8]).is_ok() {
-        // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_high().unwrap(); // send data
-    if spi_1.write(&[lcd_rotate_buffer]).is_ok() {
-        // SPI write was succesful
-    }
-    delay.delay_us(200);
+    st7789_write_com_data(
+        &mut spi_1,
+        &mut delay,
+        &mut dc_select_pin,
+        &[St7789Command::MADCtl as u8],
+        &[lcd_rotate_buffer],
+    );
 
     // config color mode
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[St7789Command::COLMod as u8]).is_ok() {
-        // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_high().unwrap(); // send data
-    if spi_1.write(&[St7789Command::ColorMode16bit as u8]).is_ok() {
-        // SPI write was succesful
-    }
-    delay.delay_us(200);
+    st7789_write_com_data(
+        &mut spi_1,
+        &mut delay,
+        &mut dc_select_pin,
+        &[St7789Command::COLMod as u8],
+        &[St7789Command::ColorMode16bit as u8],
+    );
 
     // porch control???
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[0xB2]).is_ok() {
-        // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_high().unwrap(); // send data
-    if spi_1.write(&[0x0C, 0x0C, 0x00, 0x33, 0x33]).is_ok() {
-        // SPI write was succesful
-    }
-    delay.delay_us(200);
+    st7789_write_com_data(
+        &mut spi_1,
+        &mut delay,
+        &mut dc_select_pin,
+        &[0xB2],
+        &[0x0C, 0x0C, 0x00, 0x33, 0x33],
+    );
 
     // LCD Voltage Generator Settings
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[0xB7]).is_ok() { // gate control
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_high().unwrap(); // send data
-    if spi_1.write(&[0x35]).is_ok() { // default value
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
+    st7789_write_com_data(&mut spi_1, &mut delay, &mut dc_select_pin, &[0xB7], &[0x35]);
 
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[0xBB]).is_ok() { // VCOM settings
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_high().unwrap(); // send data
-    if spi_1.write(&[0x19]).is_ok() { // 0.725v (default 0.75v for 0x20)
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
+    // VCOM settings
+    // 0.725v (default 0.75v for 0x20)
+    st7789_write_com_data(&mut spi_1, &mut delay, &mut dc_select_pin, &[0xBB], &[0x19]);
 
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[0xC0]).is_ok() { // LCMCTRL
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_high().unwrap(); // send data
-    if spi_1.write(&[0x2C]).is_ok() { // default value
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
+    // LCMCTRL
+    // default value
+    st7789_write_com_data(&mut spi_1, &mut delay, &mut dc_select_pin, &[0xC0], &[0x2C]);
 
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[0xC2]).is_ok() { // VDV and VRH command Enable
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_high().unwrap(); // send data
-    if spi_1.write(&[0x01]).is_ok() { // default value
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
+    // VDV and VRH command Enable
+    // default value
+    st7789_write_com_data(&mut spi_1, &mut delay, &mut dc_select_pin, &[0xC2], &[0x01]);
 
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[0xC3]).is_ok() { // VRH set
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_high().unwrap(); // send data
-    if spi_1.write(&[0x12]).is_ok() { // +-4.45v (defalut +-4.1v for 0x0B)
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
+    // VRH set
+    // +-4.45v (defalut +-4.1v for 0x0B)
+    st7789_write_com_data(&mut spi_1, &mut delay, &mut dc_select_pin, &[0xC3], &[0x12]);
 
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[0xC4]).is_ok() { // VDV set
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_high().unwrap(); // send data
-    if spi_1.write(&[0x20]).is_ok() { // default value
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
+    // VDV set
+    // default value
+    st7789_write_com_data(&mut spi_1, &mut delay, &mut dc_select_pin, &[0xC4], &[0x20]);
 
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[0xC6]).is_ok() { // Frame rate control in normal mode
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_high().unwrap(); // send data
-    if spi_1.write(&[0x0F]).is_ok() { // default value (60HZ)
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
+    // Frame rate control in normal mode
+    // default value (60HZ)
+    st7789_write_com_data(&mut spi_1, &mut delay, &mut dc_select_pin, &[0xC6], &[0x0F]);
 
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[0xD0]).is_ok() { // Power control 1
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_high().unwrap(); // send data
-    if spi_1.write(&[0xA4, 0xA1]).is_ok() { // default value
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
+    // Power control 1
+    // default value
+    st7789_write_com_data(
+        &mut spi_1,
+        &mut delay,
+        &mut dc_select_pin,
+        &[0xD0],
+        &[0xA4, 0xA1],
+    );
 
     // Positive Voltage Gamma Control???
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[0xE0]).is_ok() {
-        // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_high().unwrap(); // send data
-    if spi_1
-        .write(&[
+    st7789_write_com_data(
+        &mut spi_1,
+        &mut delay,
+        &mut dc_select_pin,
+        &[0xE0],
+        &[
             0xD0, 0x04, 0x0D, 0x11, 0x13, 0x2B, 0x3F, 0x54, 0x4C, 0x18, 0x0D, 0x0B, 0x1F, 0x23,
-        ])
-        .is_ok()
-    {
-        // SPI write was succesful
-    }
-    delay.delay_us(200);
+        ],
+    );
 
     // Negative Voltage Gamma Control???
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[0xE1]).is_ok() {
-        // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_high().unwrap(); // send data
-    if spi_1
-        .write(&[
+    st7789_write_com_data(
+        &mut spi_1,
+        &mut delay,
+        &mut dc_select_pin,
+        &[0xE1],
+        &[
             0xD0, 0x04, 0x0C, 0x11, 0x13, 0x2C, 0x3F, 0x44, 0x51, 0x2F, 0x1F, 0x1F, 0x20, 0x23,
-        ])
-        .is_ok()
-    {
-        // SPI write was succesful
-    }
-    delay.delay_us(200);
+        ],
+    );
 
     //Display Inversion On
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1
-        .write(&[
+    st7789_write_com_data(
+        &mut spi_1,
+        &mut delay,
+        &mut dc_select_pin,
+        &[
             St7789Command::InvOn as u8,
             St7789Command::SLPout as u8,
             St7789Command::DispOn as u8,
             St7789Command::NOROn as u8,
-        ])
-        .is_ok()
-    { //	Inversion ON
-         // SPI write was succesful
-    }
-    delay.delay_ms(10);
+        ],
+        &[0x00],
+    );
 
-    // Fill LCD in Light Blue
-    // Set Address
-    let w_start: u16 = st7789_1_30_w_shift;
-    let h_start: u16 = st7789_1_30_h_shift;
-    // let w_end: u16 = ST7789_1_30_INCH_WIDTH - 1 + st7789_1_30_w_shift;
-    // let h_end: u16 = ST7789_1_30_INCH_HEIGHT - 1 + st7789_1_30_h_shift;
-    let w_end: u16 = ST7789_1_30_INCH_WIDTH + st7789_1_30_w_shift;
-    let h_end: u16 = ST7789_1_30_INCH_HEIGHT + st7789_1_30_h_shift;
-    let w_mid: u16 = (w_end + w_start) / 2;
-    let h_mid: u16 = (h_end + h_start) / 2;
+    // init frame
+    // set colum(w, x) address
+    st7789_write_com_data(
+        &mut spi_1,
+        &mut delay,
+        &mut dc_select_pin,
+        &[St7789Command::CASet as u8],
+        &fill_data_addr_w,
+    );
 
-    let fill_data_addr_w: [u8; 4] = [
-        (w_start >> 8) as u8,
-        (w_start & 0x00FF) as u8,
-        (w_end >> 8) as u8,
-        (w_end & 0x00FF) as u8,
-    ];
-    let fill_data_addr_h: [u8; 4] = [
-        (h_start >> 8) as u8,
-        (h_start & 0x00FF) as u8,
-        (h_end >> 8) as u8,
-        (h_end & 0x00FF) as u8,
-    ];
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[St7789Command::CASet as u8]).is_ok() { // set colum(w, x) address
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_high().unwrap(); // send data
-    if spi_1.write(&fill_data_addr_w).is_ok() { // send data
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[St7789Command::RASet as u8]).is_ok() { // set row(h, y) address
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_high().unwrap(); // send data
-    if spi_1.write(&fill_data_addr_h).is_ok() { // send data
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
-    dc_select_pin.set_low().unwrap(); // send command
-    if spi_1.write(&[St7789Command::RamWr as u8]).is_ok() { // Main screen turned on
-         // SPI write was succesful
-    }
-    delay.delay_us(200);
+    // set row(h, y) address
+    st7789_write_com_data(
+        &mut spi_1,
+        &mut delay,
+        &mut dc_select_pin,
+        &[St7789Command::RASet as u8],
+        &fill_data_addr_h,
+    );
+
+    // Main screen turned on
+    st7789_write_command(
+        &mut spi_1,
+        &mut delay,
+        &mut dc_select_pin,
+        &[St7789Command::RamWr as u8],
+    );
 
     // Generate Data
-    let fill_color_0: u16 = DisplayColors::ColorRed as u16;
-    let fill_data_565_0: [u8; 2] = [(fill_color_0 >> 8) as u8, (fill_color_0 & 0x00FF) as u8];
-    let fill_color_1: u16 = DisplayColors::ColorBlue as u16;
-    let fill_data_565_1: [u8; 2] = [(fill_color_1 >> 8) as u8, (fill_color_1 & 0x00FF) as u8];
-    let fill_color_2: u16 = DisplayColors::ColorGreen as u16;
-    let fill_data_565_2: [u8; 2] = [(fill_color_2 >> 8) as u8, (fill_color_2 & 0x00FF) as u8];
+    let fill_color_r: u16 = DisplayColors::ColorRed as u16;
+    let fill_data_565_r: [u8; 2] = [(fill_color_r >> 8) as u8, (fill_color_r & 0x00FF) as u8];
+    let fill_color_b: u16 = DisplayColors::ColorBlue as u16;
+    let fill_data_565_b: [u8; 2] = [(fill_color_b >> 8) as u8, (fill_color_b & 0x00FF) as u8];
+    let fill_color_g: u16 = DisplayColors::ColorGreen as u16;
+    let fill_data_565_g: [u8; 2] = [(fill_color_g >> 8) as u8, (fill_color_g & 0x00FF) as u8];
 
-    // Send Data
-    dc_select_pin.set_high().unwrap(); // send data
-    for w in w_start..w_end {
-        for h in h_start..h_end {
-            let fill_data_565 = if h <= h_mid && w <= w_mid {
-                &fill_data_565_0[..]
-            } else if h > h_mid && w > w_mid {
-                &fill_data_565_1[..]
-            } else {
-                &fill_data_565_2[..]
-            };
-            if spi_1.write(fill_data_565).is_ok() { // Main screen turned on
-                 // SPI write was succesful
-            }
-        }
-    }
-    backlight_pin.set_high().unwrap();
+    // Send Frame Data
+    let frame_buffer = fill_frame_quad_power(
+        fill_data_565_g,
+        fill_data_565_r,
+        fill_data_565_b,
+        fill_data_565_g,
+    );
+    st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
+    backlight_pin.set_high().unwrap(); // Turn On BackLights
 
     // Init UART
     // Set the USB bus
@@ -547,10 +527,40 @@ fn main() -> ! {
     // Main Loop
     loop {
         if loop_cnt == 0 {
-            // backlight_pin.set_high().unwrap();
+            let frame_buffer = fill_frame_quad_power(
+                fill_data_565_r,
+                fill_data_565_b,
+                fill_data_565_g,
+                fill_data_565_g,
+            );
+            st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
             led_pin.set_high().unwrap();
         } else if loop_cnt == 100 {
-            // backlight_pin.set_low().unwrap();
+            let frame_buffer = fill_frame_quad_power(
+                fill_data_565_g,
+                fill_data_565_r,
+                fill_data_565_b,
+                fill_data_565_g,
+            );
+            st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
+            led_pin.set_low().unwrap();
+        } else if loop_cnt == 150 {
+            let frame_buffer = fill_frame_quad_power(
+                fill_data_565_g,
+                fill_data_565_g,
+                fill_data_565_r,
+                fill_data_565_b,
+            );
+            st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
+            led_pin.set_high().unwrap();
+        } else if loop_cnt == 200 {
+            let frame_buffer = fill_frame_quad_power(
+                fill_data_565_b,
+                fill_data_565_g,
+                fill_data_565_g,
+                fill_data_565_r,
+            );
+            st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
             led_pin.set_low().unwrap();
         } else if loop_cnt % 50 == 0 {
             delay.delay_ms(1);
@@ -575,77 +585,11 @@ fn main() -> ! {
             //     // Err(_) => todo!(),
             //     Err(_) => {}
             // }
-
-            // // Do a read+write at the same time. Data in `buffer` will be replaced with
-            // // the data read from the SPI device.
-            // const LEN_SPI_BUFF_0: usize = 3;
-            // let mut buffer: [u16; LEN_SPI_BUFF_0] = [11 * (loop_cnt as u16), 2020, 3300];
-            // let _ = usb_dev.poll(&mut [&mut serial]);
-            // let _ = serial.write(b"spi transfer_0 : send [");
-            // for _i in 0..LEN_SPI_BUFF_0 {
-            //     let s = (buffer[_i]).numtoa(10, &mut uart_buf);
-            //     let _ = serial.write(s);
-            //     if _i < (LEN_SPI_BUFF_0 - 1) {
-            //         let _ = serial.write(b", ");
-            //     }
-            // }
-            // let _ = serial.write(b"]\r\n");
-            // let _ = serial.write(b"spi transfer_0 : recv ");
-            // let transfer_success = spi_1.transfer(&mut buffer);
-            // let _ = serial.write(b"[");
-            // for _d in transfer_success.iter() {
-            //     for _i in 0..LEN_SPI_BUFF_0 {
-            //         let s = (_d[_i]).numtoa(10, &mut uart_buf);
-            //         let _ = serial.write(s);
-            //         if _i < (LEN_SPI_BUFF_0 - 1) {
-            //             let _ = serial.write(b", ");
-            //         }
-            //     }
-            // }
-            // let _ = serial.write(b"]\r\n");
-
-            // #[allow(clippy::single_match)]
-            // match transfer_success {
-            //     Ok(_) => {}  // Handle success
-            //     Err(_) => {} // handle errors
-            // };
-
-            // const LEN_SPI_BUFF_1: usize = 4;
-            // let mut buffer: [u16; LEN_SPI_BUFF_1] = [32 * (loop_cnt as u16), 2048, 4096, 8192];
-            // let _ = usb_dev.poll(&mut [&mut serial]);
-            // let _ = serial.write(b"spi transfer_1 : send [");
-            // for _i in 0..LEN_SPI_BUFF_1 {
-            //     let s = (buffer[_i]).numtoa(10, &mut uart_buf);
-            //     let _ = serial.write(s);
-            //     if _i < (LEN_SPI_BUFF_1 - 1) {
-            //         let _ = serial.write(b", ");
-            //     }
-            // }
-            // let _ = serial.write(b"]\r\n");
-            // let _ = serial.write(b"spi transfer_1 : recv ");
-            // let transfer_success = spi_1.transfer(&mut buffer);
-            // let _ = serial.write(b"[");
-            // for _d in transfer_success.iter() {
-            //     for _i in 0..LEN_SPI_BUFF_1 {
-            //         let s = (_d[_i]).numtoa(10, &mut uart_buf);
-            //         let _ = serial.write(s);
-            //         if _i < (LEN_SPI_BUFF_1 - 1) {
-            //             let _ = serial.write(b", ");
-            //         }
-            //     }
-            // }
-            // let _ = serial.write(b"]\r\n\n==========\r\n\n");
-
-            // #[allow(clippy::single_match)]
-            // match transfer_success {
-            //     Ok(_) => {}  // Handle success
-            //     Err(_) => {} // handle errors
-            // };
         }
         let _ = usb_dev.poll(&mut [&mut serial]);
         delay.delay_ms(10);
         loop_cnt += 1;
-        if loop_cnt > 200 {
+        if loop_cnt > 250 {
             loop_cnt = 0;
         }
         // if sw_a.is_low().unwrap() {
