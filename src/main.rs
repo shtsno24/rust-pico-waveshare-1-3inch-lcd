@@ -269,12 +269,8 @@ fn main() -> ! {
     // Set Address
     let w_start: u16 = st7789_1_30_w_shift;
     let h_start: u16 = st7789_1_30_h_shift;
-    // let w_end: u16 = ST7789_1_30_INCH_WIDTH - 1 + st7789_1_30_w_shift;
-    // let h_end: u16 = ST7789_1_30_INCH_HEIGHT - 1 + st7789_1_30_h_shift;
     let w_end: u16 = ST7789_1_30_INCH_WIDTH + st7789_1_30_w_shift;
     let h_end: u16 = ST7789_1_30_INCH_HEIGHT + st7789_1_30_h_shift;
-    let w_mid: u16 = (w_end + w_start) / 2;
-    let h_mid: u16 = (h_end + h_start) / 2;
 
     let fill_data_addr_w: [u8; 4] = [
         (w_start >> 8) as u8,
@@ -329,6 +325,18 @@ fn main() -> ! {
     let mut sw_x_flag = false;
     let sw_y = pins.gpio21.into_pull_up_input();
     let mut sw_y_flag = false;
+
+    // Init Joysticks
+    let joysticks_up = pins.gpio2.into_pull_up_input();
+    let mut joysticks_up_flag = false;
+    let joysticks_down = pins.gpio18.into_pull_up_input();
+    let mut joysticks_down_flag = false;
+    let joysticks_left = pins.gpio16.into_pull_up_input();
+    let mut joysticks_left_flag = false;
+    let joysticks_right = pins.gpio20.into_pull_up_input();
+    let mut joysticks_right_flag = false;
+    let joysticks_ctrl = pins.gpio3.into_pull_up_input();
+    let mut joysticks_ctrl_flag = false;
 
     // Init SPI Driver
     // These are implicitly used by the spi driver if they are in the correct mode
@@ -581,11 +589,86 @@ fn main() -> ! {
                 st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
                 sw_y_flag = true;
             }
+        } else if joysticks_up.is_low().unwrap() {
+            if joysticks_up_flag == true {
+                continue;
+            } else {
+                let _ = serial.write(b"push joysticks_up\r\n");
+                let frame_buffer = st7789_fill_frame_quad_power(
+                    fill_data_565_r,
+                    fill_data_565_g,
+                    fill_data_565_g,
+                    fill_data_565_g,
+                );
+                st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
+                joysticks_up_flag = true;
+            }
+        } else if joysticks_down.is_low().unwrap() {
+            if joysticks_down_flag == true {
+                continue;
+            } else {
+                let _ = serial.write(b"push joysticks_down\r\n");
+                let frame_buffer = st7789_fill_frame_quad_power(
+                    fill_data_565_g,
+                    fill_data_565_g,
+                    fill_data_565_g,
+                    fill_data_565_r,
+                );
+                st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
+                joysticks_down_flag = true;
+            }
+        } else if joysticks_left.is_low().unwrap() {
+            if joysticks_left_flag == true {
+                continue;
+            } else {
+                let _ = serial.write(b"push joysticks_left\r\n");
+                let frame_buffer = st7789_fill_frame_quad_power(
+                    fill_data_565_g,
+                    fill_data_565_r,
+                    fill_data_565_g,
+                    fill_data_565_g,
+                );
+                st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
+                joysticks_left_flag = true;
+            }
+        } else if joysticks_right.is_low().unwrap() {
+            if joysticks_right_flag == true {
+                continue;
+            } else {
+                let _ = serial.write(b"push joysticks_right\r\n");
+                let frame_buffer = st7789_fill_frame_quad_power(
+                    fill_data_565_g,
+                    fill_data_565_g,
+                    fill_data_565_r,
+                    fill_data_565_g,
+                );
+                st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
+                joysticks_right_flag = true;
+            }
+        } else if joysticks_ctrl.is_low().unwrap() {
+            if joysticks_ctrl_flag == true {
+                continue;
+            } else {
+                let _ = serial.write(b"push joysticks_ctrl\r\n");
+                let frame_buffer = st7789_fill_frame_quad_power(
+                    fill_data_565_r,
+                    fill_data_565_b,
+                    fill_data_565_b,
+                    fill_data_565_r,
+                );
+                st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
+                joysticks_ctrl_flag = true;
+            }
         } else {
             sw_a_flag = false;
             sw_b_flag = false;
             sw_x_flag = false;
             sw_y_flag = false;
+            joysticks_up_flag = false;
+            joysticks_down_flag = false;
+            joysticks_left_flag = false;
+            joysticks_right_flag = false;
+            joysticks_ctrl_flag = false;
             led_pin.set_high().unwrap();
 
             let _ = usb_dev.poll(&mut [&mut serial]);
