@@ -1,4 +1,6 @@
 // see https://github.com/Floyd-Fish/ST7789-STM32
+// see https://github.com/rp-rs/rp-hal/blob/main/rp2040-hal/examples/spi.rs
+// see https://www.waveshare.com/w/upload/a/ae/ST7789_Datasheet.pdf
 #![no_std]
 #![no_main]
 
@@ -22,10 +24,8 @@ use rp_pico as bsp;
 // register access
 use bsp::hal::pac;
 use bsp::{hal, XOSC_CRYSTAL_FREQ};
-// use hal::pac as pac;
-// use rp2040_hal as hal;
+
 // Pull in any important traits
-// use bsp::hal::prelude::*;
 use cortex_m::prelude::*;
 
 // Some traits we need
@@ -34,7 +34,6 @@ use core::fmt::Write;
 
 /// External high-speed crystal on the Raspberry Pi Pico board is 12 MHz. Adjust
 /// if your board has a different frequency
-// const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 const XTAL_FREQ_HZ: u32 = XOSC_CRYSTAL_FREQ;
 
 // #[link_section = ".boot2"]
@@ -72,18 +71,24 @@ pub enum St7789Command {
     PTLAr = 0x30,
     COLMod = 0x3A,
     MADCtl = 0x36,
+    PORCtrl = 0xB2,
+    GCtrl = 0xB7,
+    VCom = 0xBB,
+    LCMCtrl = 0xC0,
+    VDVVRHEn = 0xC2,
+    VRHs = 0xC3,
+    VDVs = 0xC4,
+    FRCtrl2 = 0xC6,
+    PWCtrl1 = 0xD0,
     RdID1 = 0xDA,
     RdID2 = 0xDB,
     RdID3 = 0xDC,
     RdID4 = 0xDD,
+    PVGAMCtrl = 0xE0,
+    NVGAMCtrl = 0xE1,
     // Advanced options
     ColorMode16bit = 0x55, //  RGB565 (16bit)
     ColorMode18bit = 0x66, //  RGB666 (18bit)
-}
-impl Into<u8> for St7789Command {
-    fn into(self) -> u8 {
-        self as u8
-    }
 }
 
 /* Commands for Memory Data Access Control Register */
@@ -103,14 +108,9 @@ pub enum ST7789MADCtlCommand {
     // RGB/BGR Order ('0' = RGB, '1' = BGR) */
     MADCtlRGB = 0x00,
 }
-impl Into<u8> for ST7789MADCtlCommand {
-    fn into(self) -> u8 {
-        self as u8
-    }
-}
 
 // Color Codes(RGB565)
-pub enum DisplayColors {
+pub enum DisplayColors565 {
     ColorWhite = 0xFFFF,
     ColorBlack = 0x0000,
     ColorBlue = 0x001F,
@@ -131,9 +131,10 @@ pub enum DisplayColors {
     ColorLGrayBlue = 0xA651,
     ColorLbBlue = 0x2B12,
 }
-impl Into<u16> for DisplayColors {
-    fn into(self) -> u16 {
-        self as u16
+impl Into<[u8; 2]> for DisplayColors565 {
+    fn into(self) -> [u8; 2] {
+        let _buff = self as u16;
+        [(_buff >> 8) as u8, (_buff & 0x00FF) as u8]
     }
 }
 
@@ -212,6 +213,201 @@ fn st7789_fill_frame_quad_power(
         }
     }
     fbuffer
+}
+
+fn st7789_init(
+    spi: &mut hal::Spi<hal::spi::Enabled, hal::pac::SPI1, 8>,
+    delay: &mut cortex_m::delay::Delay,
+    dc_sel_pin: &mut dyn embedded_hal::digital::v2::OutputPin<Error = core::convert::Infallible>,
+    b_light_pin: &mut dyn embedded_hal::digital::v2::OutputPin<Error = core::convert::Infallible>,
+    rst_pin: &mut dyn embedded_hal::digital::v2::OutputPin<Error = core::convert::Infallible>,
+    lcd_rot_buf: u8,
+    _data_addr_w: &[u8],
+    _data_addr_h: &[u8],
+) -> () {
+    // Init LCD
+    b_light_pin.set_low().unwrap();
+    // reset ST7789
+    rst_pin.set_low().unwrap();
+    delay.delay_ms(100);
+    rst_pin.set_high().unwrap();
+    delay.delay_ms(100);
+
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[St7789Command::MADCtl as u8],
+        &[lcd_rot_buf],
+    );
+
+    // config color mode
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[St7789Command::COLMod as u8],
+        &[St7789Command::ColorMode16bit as u8],
+    );
+
+    // porch control???
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[St7789Command::PORCtrl as u8],
+        &[0x0C, 0x0C, 0x00, 0x33, 0x33], // Power on Sequence (p.263)
+    );
+
+    // LCD Voltage Generator Settings
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[St7789Command::GCtrl as u8],
+        &[0x35], // Power On Sequence (p.268)
+    );
+
+    // VCOM settings
+    // 0.725v (default 0.75v for 0x20)
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[St7789Command::VCom as u8],
+        &[0x19],
+    );
+
+    // LCMCTRL
+    // default value
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[St7789Command::LCMCtrl as u8],
+        &[0x2C],
+    );
+
+    // VDV and VRH command Enable
+    // default value
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[St7789Command::VDVVRHEn as u8],
+        &[0x01],
+    );
+
+    // VRH set
+    // +-4.45v (defalut +-4.1v for 0x0B)
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[St7789Command::VRHs as u8],
+        &[0x12],
+    );
+
+    // VDV set
+    // default value
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[St7789Command::VDVs as u8],
+        &[0x20],
+    );
+
+    // Frame rate control in normal mode
+    // default value (60HZ)
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[St7789Command::FRCtrl2 as u8],
+        &[0x0F],
+    );
+
+    // Power control 1
+    // default value
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[St7789Command::PWCtrl1 as u8],
+        &[0xA4, 0xA1], // Power On Sequence(p.292)
+    );
+
+    // Positive Voltage Gamma Control???
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[St7789Command::PVGAMCtrl as u8],
+        &[
+            0xD0, 0x04, 0x0D, 0x11, 0x13, 0x2B, 0x3F, 0x54, 0x4C, 0x18, 0x0D, 0x0B, 0x1F, 0x23,
+        ], // (Ppp.140-144)
+    );
+
+    // Negative Voltage Gamma Control???
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[St7789Command::NVGAMCtrl as u8],
+        &[
+            0xD0, 0x04, 0x0C, 0x11, 0x13, 0x2C, 0x3F, 0x44, 0x51, 0x2F, 0x1F, 0x1F, 0x20, 0x23,
+        ], // (Ppp.140-144)
+    );
+
+    //Display Inversion On
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[
+            St7789Command::InvOn as u8,
+            St7789Command::SLPout as u8,
+            St7789Command::DispOn as u8,
+            St7789Command::NOROn as u8,
+        ],
+        &[0x00],
+    );
+
+    // init frame
+    // set colum(w, x) address
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[St7789Command::CASet as u8],
+        _data_addr_w,
+    );
+
+    // set row(h, y) address
+    st7789_write_com_data(
+        spi,
+        delay,
+        dc_sel_pin,
+        &[St7789Command::RASet as u8],
+        _data_addr_h,
+    );
+
+    // Main screen turned on
+    st7789_write_command(spi, delay, dc_sel_pin, &[St7789Command::RamWr as u8]);
+
+    // Generate Color Data
+    let fill_data_565_gray: [u8; 2] = DisplayColors565::ColorGray.into();
+
+    // Send Frame Data
+    let frame_buffer = st7789_fill_frame_quad_power(
+        fill_data_565_gray,
+        fill_data_565_gray,
+        fill_data_565_gray,
+        fill_data_565_gray,
+    );
+    st7789_write_frame(spi, dc_sel_pin, &frame_buffer);
+    b_light_pin.set_high().unwrap(); // Turn On BackLights
 }
 
 #[entry]
@@ -360,156 +556,21 @@ fn main() -> ! {
     let mut dc_select_pin = pins.gpio8.into_push_pull_output();
 
     // Init LCD
-    backlight_pin.set_low().unwrap();
-    // reset ST7789
-    reset_pin.set_low().unwrap();
-    delay.delay_ms(100);
-    reset_pin.set_high().unwrap();
-    delay.delay_ms(100);
-
-    st7789_write_com_data(
+    st7789_init(
         &mut spi_1,
         &mut delay,
         &mut dc_select_pin,
-        &[St7789Command::MADCtl as u8],
-        &[lcd_rotate_buffer],
-    );
-
-    // config color mode
-    st7789_write_com_data(
-        &mut spi_1,
-        &mut delay,
-        &mut dc_select_pin,
-        &[St7789Command::COLMod as u8],
-        &[St7789Command::ColorMode16bit as u8],
-    );
-
-    // porch control???
-    st7789_write_com_data(
-        &mut spi_1,
-        &mut delay,
-        &mut dc_select_pin,
-        &[0xB2],
-        &[0x0C, 0x0C, 0x00, 0x33, 0x33],
-    );
-
-    // LCD Voltage Generator Settings
-    st7789_write_com_data(&mut spi_1, &mut delay, &mut dc_select_pin, &[0xB7], &[0x35]);
-
-    // VCOM settings
-    // 0.725v (default 0.75v for 0x20)
-    st7789_write_com_data(&mut spi_1, &mut delay, &mut dc_select_pin, &[0xBB], &[0x19]);
-
-    // LCMCTRL
-    // default value
-    st7789_write_com_data(&mut spi_1, &mut delay, &mut dc_select_pin, &[0xC0], &[0x2C]);
-
-    // VDV and VRH command Enable
-    // default value
-    st7789_write_com_data(&mut spi_1, &mut delay, &mut dc_select_pin, &[0xC2], &[0x01]);
-
-    // VRH set
-    // +-4.45v (defalut +-4.1v for 0x0B)
-    st7789_write_com_data(&mut spi_1, &mut delay, &mut dc_select_pin, &[0xC3], &[0x12]);
-
-    // VDV set
-    // default value
-    st7789_write_com_data(&mut spi_1, &mut delay, &mut dc_select_pin, &[0xC4], &[0x20]);
-
-    // Frame rate control in normal mode
-    // default value (60HZ)
-    st7789_write_com_data(&mut spi_1, &mut delay, &mut dc_select_pin, &[0xC6], &[0x0F]);
-
-    // Power control 1
-    // default value
-    st7789_write_com_data(
-        &mut spi_1,
-        &mut delay,
-        &mut dc_select_pin,
-        &[0xD0],
-        &[0xA4, 0xA1],
-    );
-
-    // Positive Voltage Gamma Control???
-    st7789_write_com_data(
-        &mut spi_1,
-        &mut delay,
-        &mut dc_select_pin,
-        &[0xE0],
-        &[
-            0xD0, 0x04, 0x0D, 0x11, 0x13, 0x2B, 0x3F, 0x54, 0x4C, 0x18, 0x0D, 0x0B, 0x1F, 0x23,
-        ],
-    );
-
-    // Negative Voltage Gamma Control???
-    st7789_write_com_data(
-        &mut spi_1,
-        &mut delay,
-        &mut dc_select_pin,
-        &[0xE1],
-        &[
-            0xD0, 0x04, 0x0C, 0x11, 0x13, 0x2C, 0x3F, 0x44, 0x51, 0x2F, 0x1F, 0x1F, 0x20, 0x23,
-        ],
-    );
-
-    //Display Inversion On
-    st7789_write_com_data(
-        &mut spi_1,
-        &mut delay,
-        &mut dc_select_pin,
-        &[
-            St7789Command::InvOn as u8,
-            St7789Command::SLPout as u8,
-            St7789Command::DispOn as u8,
-            St7789Command::NOROn as u8,
-        ],
-        &[0x00],
-    );
-
-    // init frame
-    // set colum(w, x) address
-    st7789_write_com_data(
-        &mut spi_1,
-        &mut delay,
-        &mut dc_select_pin,
-        &[St7789Command::CASet as u8],
+        &mut backlight_pin,
+        &mut reset_pin,
+        lcd_rotate_buffer,
         &fill_data_addr_w,
-    );
-
-    // set row(h, y) address
-    st7789_write_com_data(
-        &mut spi_1,
-        &mut delay,
-        &mut dc_select_pin,
-        &[St7789Command::RASet as u8],
         &fill_data_addr_h,
     );
 
-    // Main screen turned on
-    st7789_write_command(
-        &mut spi_1,
-        &mut delay,
-        &mut dc_select_pin,
-        &[St7789Command::RamWr as u8],
-    );
-
-    // Generate Data
-    let fill_color_r: u16 = DisplayColors::ColorRed as u16;
-    let fill_data_565_r: [u8; 2] = [(fill_color_r >> 8) as u8, (fill_color_r & 0x00FF) as u8];
-    let fill_color_b: u16 = DisplayColors::ColorBlue as u16;
-    let fill_data_565_b: [u8; 2] = [(fill_color_b >> 8) as u8, (fill_color_b & 0x00FF) as u8];
-    let fill_color_g: u16 = DisplayColors::ColorGreen as u16;
-    let fill_data_565_g: [u8; 2] = [(fill_color_g >> 8) as u8, (fill_color_g & 0x00FF) as u8];
-
-    // Send Frame Data
-    let frame_buffer = st7789_fill_frame_quad_power(
-        fill_data_565_g,
-        fill_data_565_r,
-        fill_data_565_b,
-        fill_data_565_g,
-    );
-    st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
-    backlight_pin.set_high().unwrap(); // Turn On BackLights
+    // Generate Color Data
+    let fill_data_565_r: [u8; 2] = DisplayColors565::ColorRed.into();
+    let fill_data_565_b: [u8; 2] = DisplayColors565::ColorBlue.into();
+    let fill_data_565_g: [u8; 2] = DisplayColors565::ColorGreen.into();
 
     // Init UART
     // Set the USB bus
@@ -624,8 +685,8 @@ fn main() -> ! {
                 let _ = serial.write(b"push joysticks_left\r\n");
                 let frame_buffer = st7789_fill_frame_quad_power(
                     fill_data_565_g,
-                    fill_data_565_r,
                     fill_data_565_g,
+                    fill_data_565_r,
                     fill_data_565_g,
                 );
                 st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
@@ -638,8 +699,8 @@ fn main() -> ! {
                 let _ = serial.write(b"push joysticks_right\r\n");
                 let frame_buffer = st7789_fill_frame_quad_power(
                     fill_data_565_g,
-                    fill_data_565_g,
                     fill_data_565_r,
+                    fill_data_565_g,
                     fill_data_565_g,
                 );
                 st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
