@@ -607,6 +607,7 @@ fn main() -> ! {
                 st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
                 sw_a_flag = true;
             }
+            led_pin.set_low().unwrap();
         } else if sw_b.is_low().unwrap() {
             if sw_b_flag == true {
                 continue;
@@ -621,6 +622,7 @@ fn main() -> ! {
                 st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
                 sw_b_flag = true;
             }
+            led_pin.set_low().unwrap();
         } else if sw_x.is_low().unwrap() {
             if sw_x_flag == true {
                 continue;
@@ -635,6 +637,7 @@ fn main() -> ! {
                 st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
                 sw_x_flag = true;
             }
+            led_pin.set_low().unwrap();
         } else if sw_y.is_low().unwrap() {
             if sw_y_flag == true {
                 continue;
@@ -649,6 +652,7 @@ fn main() -> ! {
                 st7789_write_frame(&mut spi_1, &mut dc_select_pin, &frame_buffer);
                 sw_y_flag = true;
             }
+            led_pin.set_low().unwrap();
         } else if joysticks_up.is_low().unwrap() {
             if joysticks_up_flag == true {
                 continue;
