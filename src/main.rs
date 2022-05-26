@@ -145,7 +145,6 @@ fn st7789_write_com_data(
     command: &[u8],
     data: &[u8],
 ) -> () {
-    // see https://github.com/rp-rs/rp-hal/blob/main/boards/rp-pico/examples/pico_spi_sd_card.rs
     dc_sel_pin.set_low().unwrap(); // send command
     if spi.write(command).is_ok() {
         // SPI write was succesful
