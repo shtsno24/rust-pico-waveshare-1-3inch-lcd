@@ -1,11 +1,13 @@
 # Using Waveshare 1.3" LCD Module for Raspberry Pi Pico with Rust
 
+[![](https://img.youtube.com/vi/UnVssEl5PBc/0.jpg)](https://www.youtube.com/watch?v=UnVssEl5PBc)
+
 This project is for controlling an [LCD module(using ST7789)](https://www.waveshare.com/wiki/Pico-LCD-1.3) for a Raspberry Pi Pico using Rust.  
 The code is primitive, so not much can be done with it, but we were able to actually control the screen using Rust.  
 
 ## Blog
 
-(under construction)  
+[Rust初心者が、Rust+RPi PicoでST7789使用TFT LCD(Waveshare Pico LCD 1.3)を使う話(In Japanese)](https://www.shtsno24.tokyo/2022/05/rustrustrpi-picost7789tft-lcdwaveshare.html)
 
 ## Reference
 
