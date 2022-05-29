@@ -1,19 +1,16 @@
-// see https://github.com/Floyd-Fish/ST7789-STM32
-// see https://github.com/rp-rs/rp-hal/blob/main/rp2040-hal/examples/spi.rs
-// see https://www.waveshare.com/w/upload/a/ae/ST7789_Datasheet.pdf
 #![no_std]
 #![no_main]
 
+// see https://github.com/Floyd-Fish/ST7789-STM32
+// see https://github.com/rp-rs/rp-hal/blob/main/rp2040-hal/examples/spi.rs
+// see https://www.waveshare.com/w/upload/a/ae/ST7789_Datasheet.pdf
+
 use cortex_m_rt::entry;
-use defmt::*;
 use defmt_rtt as _;
 use embedded_hal::digital::v2::{InputPin, OutputPin};
 use embedded_time::fixed_point::FixedPoint;
 use embedded_time::rate::Extensions;
 use panic_halt as _;
-
-// Time handling traits
-use embedded_time::rate::*;
 
 // Provide an alias for our BSP so we can switch targets quickly.
 // Uncomment the BSP you included in Cargo.toml, the rest of the code does not need to change.
@@ -30,7 +27,6 @@ use cortex_m::prelude::*;
 
 // Some traits we need
 use bsp::hal::clocks::Clock;
-use core::fmt::Write;
 
 /// External high-speed crystal on the Raspberry Pi Pico board is 12 MHz. Adjust
 /// if your board has a different frequency
@@ -44,8 +40,6 @@ const XTAL_FREQ_HZ: u32 = XOSC_CRYSTAL_FREQ;
 use usb_device::{class_prelude::*, prelude::*};
 // USB Communications Class Device support
 use usbd_serial::SerialPort;
-// Convert a number to a string
-use numtoa::NumToA;
 
 // ST7789 Constants
 const ST7789_1_30_INCH_HEIGHT: u16 = 240;
@@ -411,10 +405,8 @@ fn st7789_init(
 
 #[entry]
 fn main() -> ! {
-    info!("Program start");
-
     // Buffer for NumToA
-    let mut uart_buf = [0u8; 128];
+    // let mut uart_buf = [0u8; 128];
 
     // User define variables
     let lcd_rotate: u8 = 0;
